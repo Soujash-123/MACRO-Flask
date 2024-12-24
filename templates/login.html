@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MACRO - Login</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        input {
+            color: #7e22ce !important;
+        }
+        input::placeholder {
+            color: #a855f7 !important;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-purple-900 to-black min-h-screen text-white">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-md mx-auto">
+            <!-- Header -->
+            <div class="text-center mb-12">
+                <h1 class="text-5xl font-bold mb-4">MACRO</h1>
+                <p class="text-xl text-purple-200">Connect. Create. Collaborate.</p>
+            </div>
+
+            <!-- Login Card -->
+            <div class="bg-white/10 backdrop-blur-md rounded-lg p-8 shadow-xl">
+                <h2 class="text-3xl font-bold mb-6 flex items-center">
+                    <i class="fas fa-sign-in-alt mr-3"></i>
+                    Login
+                </h2>
+                <form id="login-form" class="space-y-4">
+                    <div>
+                        <label for="login-username" class="block text-sm font-medium mb-1">Username</label>
+                        <input 
+                            type="text" 
+                            id="login-username" 
+                            placeholder="Enter your username"
+                            class="w-full px-4 py-2 rounded bg-white/20 backdrop-blur-sm border border-purple-300/30 focus:border-purple-500 focus:outline-none"
+                            required
+                        >
+                    </div>
+                    
+                    <div>
+                        <label for="login-password" class="block text-sm font-medium mb-1">Password</label>
+                        <input 
+                            type="password" 
+                            id="login-password" 
+                            placeholder="Enter your password"
+                            class="w-full px-4 py-2 rounded bg-white/20 backdrop-blur-sm border border-purple-300/30 focus:border-purple-500 focus:outline-none"
+                            required
+                        >
+                    </div>
+                    
+                    <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition duration-300 mt-6">
+                        Login
+                    </button>
+                </form>
+
+                <div class="mt-6 text-center">
+                    <p>Don't have an account? 
+                        <a href="/signup" class="text-purple-400 hover:text-purple-300 font-medium">Sign up here</a>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="text-center mt-12 text-purple-200">
+                <p>Join the future of music industry networking</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('login-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+
+            fetch('/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ username, password }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                } else {
+                    alert(data.message);
+                    window.location.href = '/dashboard'; // Redirect to protected route after successful login
+                }
+            })
+            .catch(error => {
+                alert('An error occurred during login. Please try again.');
+            });
+        });
+    </script>
+</body>
+</html>
