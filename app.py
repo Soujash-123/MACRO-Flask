@@ -2,16 +2,17 @@ from flask import Flask, request, jsonify, render_template, session, redirect, u
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 from bson import json_util, ObjectId
+from werkzeug.utils import secure_filename
 import json
 import hashlib
 import os
+import io
 from cryptography.fernet import Fernet
 from datetime import datetime, timedelta
 import uuid
 import logging
 from functools import wraps
 from gridfs import GridFS
-from io import BytesIO
 import mimetypes
 
 # Configure logging
@@ -44,33 +45,6 @@ except Exception as e:
     logger.error(f"Failed to connect to MongoDB: {str(e)}")
     raise
 
-# File handling utilities
-def allowed_file(filename, allowed_extensions):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
-
-def get_file_extension(filename):
-    return filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
-
-def store_file_in_gridfs(file_data, filename, content_type):
-    try:
-        file_id = fs.put(
-            file_data,
-            filename=filename,
-            content_type=content_type
-        )
-        return str(file_id)
-    except Exception as e:
-        logger.error(f"Error storing file in GridFS: {str(e)}")
-        raise
-
-def get_file_from_gridfs(file_id):
-    try:
-        file_data = fs.get(ObjectId(file_id))
-        return file_data
-    except Exception as e:
-        logger.error(f"Error retrieving file from GridFS: {str(e)}")
-        raise
-
 # Security helper functions
 def generate_key():
     return Fernet.generate_key()
@@ -93,6 +67,42 @@ def decrypt_data(encrypted_data, fernet):
         return fernet.decrypt(encrypted_data.encode()).decode()
     except Exception as e:
         logger.error(f"Decryption error: {str(e)}")
+        raise
+
+# File handling utilities
+def allowed_file(filename, allowed_extensions):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
+
+def get_file_extension(filename):
+    return filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+
+def store_file_in_gridfs(file_data, filename, content_type):
+    try:
+        if not file_data:
+            raise ValueError("Empty file data")
+            
+        file_id = fs.put(
+            io.BytesIO(file_data),
+            filename=secure_filename(filename),
+            content_type=content_type or 'application/octet-stream'
+        )
+        # Verify file was stored
+        stored_file = fs.get(file_id)
+        if not stored_file:
+            raise Exception("File not stored properly")
+        return str(file_id)
+    except Exception as e:
+        logger.error(f"Error storing file in GridFS: {str(e)}")
+        raise
+
+def get_file_from_gridfs(file_id):
+    try:
+        file_data = fs.get(ObjectId(file_id))
+        if not file_data:
+            raise ValueError("File not found")
+        return file_data
+    except Exception as e:
+        logger.error(f"Error retrieving file from GridFS: {str(e)}")
         raise
 
 # Authentication decorator
@@ -248,6 +258,52 @@ def logout():
         logger.info(f"User logged out: {username}")
     return jsonify({"message": "Logged out successfully"}), 200
 
+def upload_file(file_path, session, post_type, content=None):
+    """
+    Upload an image or audio file to MongoDB and store its metadata in the posts collection.
+
+    :param file_path: Path to the file to upload
+    :param session: Session dictionary containing 'user_id' and 'username'
+    :param post_type: Type of the post (e.g., 'image', 'audio', 'text', etc.)
+    :param content: Additional content or text related to the post
+    """
+    try:
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        # Ensure session contains required fields
+        if 'user_id' not in session or 'username' not in session:
+            raise ValueError("Session must contain 'user_id' and 'username'.")
+
+        file_id = None
+        file_name = os.path.basename(file_path)
+        
+        # Read the file content and upload it to GridFS if file_path is provided
+        with open(file_path, 'rb') as file_data:
+            file_id = fs.put(file_data, filename=file_name, content_type=post_type)
+        
+        # Prepare the post metadata
+        post_metadata = {
+            "post_id": str(uuid.uuid4()),
+            "user_id": session['user_id'],
+            "username": session['username'],
+            "type": post_type,
+            "content": content if content else "",
+            "file_id": str(file_id) if file_id else None,
+            "created_at": datetime.utcnow(),
+            "likes": 0,
+            "comments": []
+        }
+        
+        # Insert metadata into the posts collection
+        posts_collection.insert_one(post_metadata)
+        logger.info(f"Post created successfully. Post ID: {post_metadata['post_id']}")
+        return post_metadata
+    
+    except Exception as e:
+        logger.error(f"Failed to upload file and create post: {str(e)}")
+        raise
+
 # Posts routes
 @app.route('/posts', methods=['GET', 'POST'])
 @login_required
@@ -267,7 +323,7 @@ def handle_posts():
 
             return json.loads(json.dumps({
                 'posts': posts,
-                'last_update': datetime.utcnow()
+                'last_update': datetime.now()
             }, default=mongo_json_serializer)), 200
 
         except Exception as e:
@@ -276,44 +332,27 @@ def handle_posts():
 
     elif request.method == 'POST':
         try:
-            ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'wav', 'ogg'}
-            ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-
             post_type = request.form.get('type')
             content = request.form.get('content')
-            file = request.files.get('file')
-
-            if not all([post_type, content]):
-                return jsonify({"error": "Missing required fields"}), 400
-
-            file_id = None
-            if file and file.filename:
-                filename = file.filename
-                file_ext = get_file_extension(filename)
-                
-                if post_type == 'audio' and file_ext not in ALLOWED_AUDIO_EXTENSIONS:
-                    return jsonify({"error": "Invalid audio file format"}), 400
-                elif post_type == 'image' and file_ext not in ALLOWED_IMAGE_EXTENSIONS:
-                    return jsonify({"error": "Invalid image file format"}), 400
-
-                content_type = mimetypes.guess_type(filename)[0]
-                file_id = store_file_in_gridfs(file.read(), filename, content_type)
-
-            post = {
-                "post_id": str(uuid.uuid4()),
-                "user_id": session['user_id'],
-                "username": session['username'],
-                "type": post_type,
-                "content": content,
-                "file_id": file_id,
-                "created_at": datetime.utcnow(),
-                "likes": 0,
-                "comments": []
+            file = request.files.get('post-file')
+            user_id = session["user_id"]
+            username = session["username"]
+            print("File: ",file)
+            print("UserID: ",user_id)
+            print("UserName: ", username)
+            file_path = "/Users/ce/Desktop/Screenshot 2024-11-12 at 9.51.41 PM.png"  # or "path/to/your/audio.mp3"
+            user_session = {
+                "user_id": session["user_id"],
+                "username": session["username"]
             }
 
-            result = posts_collection.insert_one(post)
+            metadata = upload_file(file_path, user_session, post_type, content)
+
+            file_id = metadata["file_id"]
+            post = metadata["post_id"]
+
             
-            post.pop('_id', None)
+            logger.info(f"Post created successfully by {session['username']} with file_id: {file_id}")
             return json.loads(json.dumps(post, default=mongo_json_serializer)), 201
 
         except Exception as e:
@@ -325,7 +364,7 @@ def serve_file(file_id):
     try:
         file_data = get_file_from_gridfs(file_id)
         return send_file(
-            BytesIO(file_data.read()),
+            io.BytesIO(file_data.read()),
             mimetype=file_data.content_type,
             as_attachment=True,
             download_name=file_data.filename
