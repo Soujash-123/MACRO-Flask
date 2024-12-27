@@ -4,4 +4,3 @@ bson
 cryptography
 werkzeug
 appwrite
-gridfs
