@@ -4,3 +4,4 @@ bson
 cryptography
 werkzeug
 appwrite
+gunicorn
