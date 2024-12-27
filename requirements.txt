@@ -4,15 +4,4 @@ bson
 cryptography
 werkzeug
 appwrite
-hashlib
-logging
-mimetypes
-uuid
-datetime
-functools
-io
-os
 gridfs
-tempfile
-json
-gunicorn
