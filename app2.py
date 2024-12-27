@@ -14,7 +14,6 @@ import logging
 from functools import wraps
 from gridfs import GridFS
 import mimetypes
-import tempfile
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -259,97 +258,73 @@ def logout():
         logger.info(f"User logged out: {username}")
     return jsonify({"message": "Logged out successfully"}), 200
 
-from appwrite.client import Client
-from appwrite.services.storage import Storage
-from appwrite.input_file import InputFile
-from appwrite.id import ID
-from appwrite.exception import AppwriteException
+def upload_file(file_path, session, post_type, content=None):
+    """
+    Upload an image or audio file to MongoDB and store its metadata in the posts collection.
 
-client = Client()
-client.set_endpoint('https://cloud.appwrite.io/v1')
-client.set_project('676da1890031e065fd98')
-client.set_key('standard_06bfc36e517c20846d9457968a6afcf30cb6a1a4dd8f1c74139d086c63c0094aefb4b684449f97de498bb1c219110d4f1704c8cb7d0cf5261d5aaf2363a39592eaaa0f7e5063b20c8b6615b5a77b0c9c55dd94957c5e67cfdba9014581f0b26ba07413caf8c8291f6dc5dab5b21dce221e65b39d749c9fbf78066f7f9fbdbddd')
-storage = Storage(client)
-PROJECT_ID = '676da1890031e065fd98'
-BUCKET_NAME = 'MACRO-Posts Bucket'
-
-def get_or_create_bucket():
+    :param file_path: Path to the file to upload
+    :param session: Session dictionary containing 'user_id' and 'username'
+    :param post_type: Type of the post (e.g., 'image', 'audio', 'text', etc.)
+    :param content: Additional content or text related to the post
+    """
     try:
-        # List all buckets and check if Screenshots Bucket exists
-        buckets = storage.list_buckets()
-        for bucket in buckets['buckets']:
-            if bucket['name'] == BUCKET_NAME:
-                return bucket['$id']
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
         
-        # Create new bucket if not found
-        bucket = storage.create_bucket(
-            bucket_id=ID.unique(),
-            name=BUCKET_NAME,
-            permissions=['read("any")', 'write("any")']
-        )
-        return bucket['$id']
-    except AppwriteException as e:
-        print(f"Bucket error: {str(e)}")
-        return None
+        # Ensure session contains required fields
+        if 'user_id' not in session or 'username' not in session:
+            raise ValueError("Session must contain 'user_id' and 'username'.")
 
-def upload_file(file):
-    try:
-        bucket_id = get_or_create_bucket()
-        if not bucket_id:
-            raise Exception("Failed to get or create bucket")
+        file_id = None
+        file_name = os.path.basename(file_path)
         
-        # Create a temporary file to store the uploaded content
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            file.save(temp_file.name)
-            
-            # Upload the temporary file to Appwrite
-            file_upload = storage.create_file(
-                bucket_id=bucket_id,
-                file_id=ID.unique(),
-                file=InputFile.from_path(temp_file.name),
-                permissions=['read("any")']
-            )
-            
-            # Clean up the temporary file
-            os.unlink(temp_file.name)
+        # Read the file content and upload it to GridFS if file_path is provided
+        with open(file_path, 'rb') as file_data:
+            file_id = fs.put(file_data, filename=file_name, content_type=post_type)
         
-        # Generate the file URL
-        file_url = f"https://cloud.appwrite.io/v1/storage/buckets/{bucket_id}/files/{file_upload['$id']}/view?project={PROJECT_ID}&mode=admin"
-        
-        return {
-            "file_id": file_upload['$id'],
-            "file_url": file_url
+        # Prepare the post metadata
+        post_metadata = {
+            "post_id": str(uuid.uuid4()),
+            "user_id": session['user_id'],
+            "username": session['username'],
+            "type": post_type,
+            "content": content if content else "",
+            "file_id": str(file_id) if file_id else None,
+            "created_at": datetime.utcnow(),
+            "likes": 0,
+            "comments": []
         }
         
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        return None
-
-
-def get_files():
-    try:
-        bucket_id = get_or_create_bucket()
-        if not bucket_id:
-            raise Exception("Failed to get bucket")
-            
-        files = storage.list_files(bucket_id)
-        file_urls = []
-        for file in files['files']:
-            url = f"https://cloud.appwrite.io/v1/storage/buckets/{bucket_id}/files/{file['$id']}/view?project={PROJECT_ID}&mode=admin"
-            file_urls.append(url)
-        return file_urls
-    except Exception as e:
-        print(f"Error getting files: {str(e)}")
-        return []
+        # Insert metadata into the posts collection
+        posts_collection.insert_one(post_metadata)
+        logger.info(f"Post created successfully. Post ID: {post_metadata['post_id']}")
+        return post_metadata
     
+    except Exception as e:
+        logger.error(f"Failed to upload file and create post: {str(e)}")
+        raise
+
 # Posts routes
 @app.route('/posts', methods=['GET', 'POST'])
 @login_required
 def handle_posts():
     if request.method == 'GET':
         try:
-            files = get_files()
-            return files
+            last_update = request.args.get('last_update', None)
+            query = {}
+            
+            if last_update:
+                query['created_at'] = {'$gt': datetime.fromisoformat(last_update)}
+            
+            posts = list(posts_collection.find(
+                query,
+                {'_id': 0}
+            ).sort('created_at', -1).limit(50))
+
+            return json.loads(json.dumps({
+                'posts': posts,
+                'last_update': datetime.now()
+            }, default=mongo_json_serializer)), 200
 
         except Exception as e:
             logger.error(f"Error fetching posts: {str(e)}")
@@ -360,37 +335,25 @@ def handle_posts():
             post_type = request.form.get('type')
             content = request.form.get('content')
             file = request.files.get('post-file')
-            
-            if not file:
-                return jsonify({"error": "No file provided"}), 400
-
-            # Upload file to Appwrite
-            upload_result = upload_file(file)
-            if not upload_result:
-                return jsonify({"error": "Failed to upload file"}), 500
-
-            # Create post document
-            post = {
-                "post_id": str(uuid.uuid4()),
+            user_id = session["user_id"]
+            username = session["username"]
+            print("File: ",file)
+            print("UserID: ",user_id)
+            print("UserName: ", username)
+            file_path = "/Users/ce/Desktop/Screenshot 2024-11-12 at 9.51.41 PM.png"  # or "path/to/your/audio.mp3"
+            user_session = {
                 "user_id": session["user_id"],
-                "username": session["username"],
-                "type": post_type,
-                "content": content,
-                "file_id": upload_result["file_id"],
-                "file_url": upload_result["file_url"],
-                "created_at": datetime.utcnow(),
-                "likes": 0,
-                "comment_count": 0
+                "username": session["username"]
             }
 
-            # Store post metadata in MongoDB
-            posts_collection.insert_one(post)
+            metadata = upload_file(file_path, user_session, post_type, content)
+
+            file_id = metadata["file_id"]
+            post = metadata["post_id"]
+
             
-            # Remove MongoDB _id before returning
-            post.pop('_id', None)
-            
-            logger.info(f"Post created successfully by {session['username']} with file_id: {upload_result['file_id']}")
-            return jsonify(post), 201
+            logger.info(f"Post created successfully by {session['username']} with file_id: {file_id}")
+            return json.loads(json.dumps(post, default=mongo_json_serializer)), 201
 
         except Exception as e:
             logger.error(f"Error creating post: {str(e)}")
