@@ -1,6 +1,5 @@
 flask
 pymongo
-bson
 cryptography
 werkzeug
 appwrite
