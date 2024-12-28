@@ -15,7 +15,6 @@ from functools import wraps
 from gridfs import GridFS
 import mimetypes
 import tempfile
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -274,57 +273,89 @@ PROJECT_ID = '676da1890031e065fd98'
 BUCKET_NAME = 'MACRO-Posts Bucket'
 
 def get_or_create_bucket():
+    """
+    Get existing bucket or create new one in Appwrite.
+    
+    Returns:
+        str: Bucket ID if successful, None if failed
+    """
     try:
-        # List all buckets and check if Screenshots Bucket exists
+        # List all buckets and check if ours exists
         buckets = storage.list_buckets()
         for bucket in buckets['buckets']:
             if bucket['name'] == BUCKET_NAME:
+                logger.info(f"Found existing bucket: {bucket['$id']}")
                 return bucket['$id']
         
         # Create new bucket if not found
         bucket = storage.create_bucket(
             bucket_id=ID.unique(),
             name=BUCKET_NAME,
-            permissions=['read("any")', 'write("any")']
+            permissions=['read("any")', 'write("any")'],
+            file_security=False,  # Allow public access to files
+            maximum_file_size=30_000_000  # 30MB limit
         )
+        logger.info(f"Created new bucket: {bucket['$id']}")
         return bucket['$id']
+        
     except AppwriteException as e:
-        print(f"Bucket error: {str(e)}")
+        logger.error(f"Appwrite bucket error: {str(e)}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error in get_or_create_bucket: {str(e)}")
         return None
 
-def upload_file(file):
+def upload_image(file):
+    """
+    Upload a file to Appwrite storage.
+    
+    Args:
+        file: FileStorage object from Flask request.files
+        
+    Returns:
+        dict: Contains file_id and file_url if successful, None if failed
+    """
     try:
         bucket_id = get_or_create_bucket()
         if not bucket_id:
             raise Exception("Failed to get or create bucket")
         
-        # Create a temporary file to store the uploaded content
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+        # Ensure filename is secure
+        filename = secure_filename(file.filename)
+        
+        # Create a temporary file with proper extension
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as temp_file:
             file.save(temp_file.name)
             
-            # Upload the temporary file to Appwrite
+            # Generate a unique file ID
+            file_id = ID.unique()
+            
+            # Upload to Appwrite
             file_upload = storage.create_file(
                 bucket_id=bucket_id,
-                file_id=ID.unique(),
+                file_id=file_id,
                 file=InputFile.from_path(temp_file.name),
                 permissions=['read("any")']
             )
             
-            # Clean up the temporary file
+            # Clean up temporary file
             os.unlink(temp_file.name)
         
-        # Generate the file URL
+        # Generate public URL for the file
         file_url = f"https://cloud.appwrite.io/v1/storage/buckets/{bucket_id}/files/{file_upload['$id']}/view?project={PROJECT_ID}&mode=admin"
         
+        logger.info(f"File uploaded successfully: {file_id}")
         return {
             "file_id": file_upload['$id'],
             "file_url": file_url
         }
         
-    except Exception as e:
-        print(f"Error: {str(e)}")
+    except AppwriteException as e:
+        logger.error(f"Appwrite upload error: {str(e)}")
         return None
-
+    except Exception as e:
+        logger.error(f"Unexpected error in upload_image: {str(e)}")
+        return None
 
 def get_files():
     try:
@@ -341,15 +372,100 @@ def get_files():
     except Exception as e:
         print(f"Error getting files: {str(e)}")
         return []
+
+
+def upload_file(file_path, session, post_type, content=None):
+    """
+    Upload an image or audio file to MongoDB and store its metadata in the posts collection.
+
+    :param file_path: Path to the file to upload
+    :param session: Session dictionary containing 'user_id' and 'username'
+    :param post_type: Type of the post (e.g., 'image', 'audio', 'text', etc.)
+    :param content: Additional content or text related to the post
+    """
+    try:
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        # Ensure session contains required fields
+        if 'user_id' not in session or 'username' not in session:
+            raise ValueError("Session must contain 'user_id' and 'username'.")
+
+        file_id = None
+        file_name = upload_image(file_path)
+        
+        # Read the file content and upload it to GridFS if file_path is provided
+        with open(file_path, 'rb') as file_data:
+            file_id = fs.put(file_data, filename=file_name, content_type=post_type)
+        
+        # Prepare the post metadata
+        post_metadata = {
+            "post_id": str(uuid.uuid4()),
+            "user_id": session['user_id'],
+            "username": session['username'],
+            "type": post_type,
+            "content": content if content else "",
+            "file_id": str(file_id) if file_id else None,
+            "created_at": datetime.utcnow(),
+            "likes": 0,
+            "comments": []
+        }
+        
+        # Insert metadata into the posts collection
+        posts_collection.insert_one(post_metadata)
+        logger.info(f"Post created successfully. Post ID: {post_metadata['post_id']}")
+        return post_metadata
     
+    except Exception as e:
+        logger.error(f"Failed to upload file and create post: {str(e)}")
+        raise
+
 # Posts routes
 @app.route('/posts', methods=['GET', 'POST'])
 @login_required
 def handle_posts():
     if request.method == 'GET':
         try:
-            files = get_files()
-            return files
+            # Get the last update timestamp if provided
+            last_update = request.args.get('last_update', None)
+            query = {}
+            
+            if last_update:
+                query['created_at'] = {'$gt': datetime.fromisoformat(last_update)}
+            
+            # Query posts collection with specific field projection
+            posts = list(posts_collection.find(
+                query,
+                {
+                    '_id': 0,
+                    'username': 1,
+                    'created_at': 1,
+                    'file_url': 1,  # URL of the file from Appwrite
+                    'likes': 1,
+                    'comment_count': 1,
+                    'content': 1,  # Including content in case it's needed
+                    'type': 1      # Including type to differentiate between image/audio
+                }
+            ).sort('created_at', -1).limit(50))
+
+            # Format the timestamp for each post
+            formatted_posts = []
+            for post in posts:
+                formatted_post = {
+                    'username': post['username'],
+                    'time': post['created_at'].isoformat(),
+                    'file_url': post.get('file_url', ''),
+                    'likes': post.get('likes', 0),
+                    'comments': post.get('comment_count', 0),
+                    'content': post.get('content', ''),
+                    'type': post.get('type', '')
+                }
+                formatted_posts.append(formatted_post)
+
+            return jsonify({
+                'posts': formatted_posts,
+                'last_update': datetime.now().isoformat()
+            }), 200
 
         except Exception as e:
             logger.error(f"Error fetching posts: {str(e)}")
@@ -357,44 +473,63 @@ def handle_posts():
 
     elif request.method == 'POST':
         try:
+            # Validate request data
             post_type = request.form.get('type')
-            content = request.form.get('content')
+            content = request.form.get('content', '')
             file = request.files.get('post-file')
-            
+
             if not file:
                 return jsonify({"error": "No file provided"}), 400
+            if not post_type:
+                return jsonify({"error": "Post type is required"}), 400
+
+            # Check file type
+            allowed_image_types = {'image/jpeg', 'image/png', 'image/gif'}
+            allowed_audio_types = {'audio/mpeg', 'audio/wav', 'audio/mp3'}
+            file_type = file.content_type
+
+            if post_type == 'image' and file_type not in allowed_image_types:
+                return jsonify({"error": "Invalid image format"}), 400
+            elif post_type == 'audio' and file_type not in allowed_audio_types:
+                return jsonify({"error": "Invalid audio format"}), 400
 
             # Upload file to Appwrite
-            upload_result = upload_file(file)
+            upload_result = upload_image(file)
             if not upload_result:
                 return jsonify({"error": "Failed to upload file"}), 500
 
-            # Create post document
-            post = {
+            # Create post in MongoDB
+            post_data = {
                 "post_id": str(uuid.uuid4()),
-                "user_id": session["user_id"],
-                "username": session["username"],
+                "user_id": session['user_id'],
+                "username": session['username'],
                 "type": post_type,
                 "content": content,
-                "file_id": upload_result["file_id"],
-                "file_url": upload_result["file_url"],
+                "file_url": upload_result['file_url'],
+                "file_id": upload_result['file_id'],
                 "created_at": datetime.utcnow(),
                 "likes": 0,
+                "likes_by": [],
                 "comment_count": 0
             }
 
-            # Store post metadata in MongoDB
-            posts_collection.insert_one(post)
-            
-            # Remove MongoDB _id before returning
-            post.pop('_id', None)
-            
-            logger.info(f"Post created successfully by {session['username']} with file_id: {upload_result['file_id']}")
-            return jsonify(post), 201
+            result = posts_collection.insert_one(post_data)
+            if not result.inserted_id:
+                # If MongoDB insert fails, attempt to delete the uploaded file
+                try:
+                    delete_file_from_appwrite(upload_result['file_id'])
+                except Exception as e:
+                    logger.error(f"Failed to cleanup Appwrite file after MongoDB error: {str(e)}")
+                return jsonify({"error": "Failed to create post"}), 500
+
+            post_data.pop('_id', None)
+            logger.info(f"Post created successfully by {session['username']}")
+            return json.loads(json.dumps(post_data, default=mongo_json_serializer)), 201
 
         except Exception as e:
             logger.error(f"Error creating post: {str(e)}")
             return jsonify({"error": "An error occurred creating post"}), 500
+
 
 @app.route('/files/<file_id>')
 def serve_file(file_id):
