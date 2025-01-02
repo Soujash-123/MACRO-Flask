@@ -419,7 +419,10 @@ def upload_file(file_path, session, post_type, content=None):
     except Exception as e:
         logger.error(f"Failed to upload file and create post: {str(e)}")
         raise
-
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def catch_all(path):
+    return app.send_static_file('index.html')
 # Posts routes
 @app.route('/posts', methods=['GET', 'POST'])
 @login_required
@@ -866,26 +869,137 @@ def manage_profile():
             fernet = get_fernet(key_doc['key'])
             update_fields = {}
 
+            # Validate username change
+            if 'username' in data and data['username'] != user['username']:
+                # Check if username is already taken
+                existing_user = users_collection.find_one({"username": data['username']})
+                if existing_user and existing_user['user_id'] != session['user_id']:
+                    return jsonify({"error": "Username already taken"}), 400
+                update_fields['username'] = data['username']
+
+            # Handle password update
+            if 'password' in data and data['password']:
+                salt = bcrypt.gensalt()
+                hashed_password = bcrypt.hashpw(data['password'].encode('utf-8'), salt)
+                update_fields['password'] = hashed_password
+
+            # Handle email update
             if 'email' in data:
                 update_fields['email'] = encrypt_data(data['email'], fernet)
 
-            if 'instrument' in data and session['role'] == 'Musician':
-                update_fields['instrument'] = encrypt_data(data['instrument'], fernet)
+            # Handle role update
+            if 'role' in data:
+                # Validate role
+                valid_roles = ['musician', 'listener', 'producer']
+                if data['role'].lower() not in valid_roles:
+                    return jsonify({"error": "Invalid role"}), 400
+                update_fields['role'] = encrypt_data(data['role'].capitalize(), fernet)
+                # Update session role
+                session['role'] = data['role'].capitalize()
+
+            # Handle instrument update
+            if 'role' in data and data['role'].lower() == 'musician':
+                if 'instrument' in data and data['instrument']:
+                    update_fields['instrument'] = encrypt_data(data['instrument'], fernet)
+            else:
+                # If role is not musician, remove instrument if it exists
+                update_fields['$unset'] = {'instrument': ''}
 
             if update_fields:
-                result = users_collection.update_one(
-                    {"user_id": session['user_id']},
-                    {"$set": update_fields}
-                )
+                if '$unset' in update_fields:
+                    unset_operation = {'$unset': update_fields.pop('$unset')}
+                    users_collection.update_one(
+                        {"user_id": session['user_id']},
+                        unset_operation
+                    )
 
-                if result.modified_count == 0:
-                    return jsonify({"error": "Failed to update profile"}), 500
+                if update_fields:  # If there are still fields to update
+                    result = users_collection.update_one(
+                        {"user_id": session['user_id']},
+                        {"$set": update_fields}
+                    )
+
+                    if result.modified_count == 0 and len(update_fields) > 0:
+                        return jsonify({"error": "Failed to update profile"}), 500
 
             return jsonify({"message": "Profile updated successfully"}), 200
 
         except Exception as e:
             logger.error(f"Error updating user profile: {str(e)}")
             return jsonify({"error": "An error occurred updating user profile"}), 500
+
+@app.route('/<username>/')
+@login_required
+def user_profile(username):
+    try:
+        # Find the user in the database
+        user = users_collection.find_one({"username": username})
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        # Get user's encryption key
+        key_doc = keys_collection.find_one({"user_id": user['user_id']})
+        if not key_doc:
+            return jsonify({"error": "User data unavailable"}), 500
+
+        fernet = get_fernet(key_doc['key'])
+
+        # Decrypt user data
+        user_data = {
+            "username": user['username'],
+            "role": decrypt_data(user['role'], fernet)
+        }
+
+        # Add instrument if user is a musician
+        if 'instrument' in user:
+            user_data['instrument'] = decrypt_data(user['instrument'], fernet)
+
+        # Fetch user's posts
+        posts = list(posts_collection.find(
+            {"user_id": user['user_id']},
+            {
+                '_id': 0,
+                'username': 1,
+                'created_at': 1,
+                'type': 1,
+                'content': 1,
+                'file_url': 1,
+                'likes': 1,
+                'comment_count': 1
+            }
+        ).sort('created_at', -1))
+
+        # Format posts for response
+        formatted_posts = []
+        for post in posts:
+            formatted_post = {
+                'username': post['username'],
+                'time': post['created_at'].isoformat(),
+                'type': post['type'],
+                'content': post.get('content', ''),
+                'file_url': post.get('file_url', ''),
+                'likes': post.get('likes', 0),
+                'comments': post.get('comment_count', 0)
+            }
+            formatted_posts.append(formatted_post)
+
+        # Get post statistics
+        post_stats = {
+            'total_posts': len(posts),
+            'total_likes': sum(post.get('likes', 0) for post in posts),
+            'total_comments': sum(post.get('comment_count', 0) for post in posts)
+        }
+
+        # Return profile data and posts
+        return jsonify({
+            'user': user_data,
+            'stats': post_stats,
+            'posts': formatted_posts
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error fetching user profile for {username}: {str(e)}")
+        return jsonify({"error": "An error occurred fetching user profile"}), 500
 
 # Error handlers
 @app.errorhandler(404)

@@ -87,6 +87,46 @@
                 </div>
             </div>
 
+            <!-- User Profile Section -->
+<div id="user-profile-section" class="hidden">
+    <div class="bg-purple-900 bg-opacity-30 backdrop-blur-md rounded-lg p-6 mb-8">
+        <div class="flex items-start space-x-4">
+            <div class="flex-shrink-0">
+                <div class="w-24 h-24 bg-purple-700 rounded-full flex items-center justify-center">
+                    <i class="fas fa-user text-4xl"></i>
+                </div>
+            </div>
+            <div class="flex-grow">
+                <div class="flex justify-between items-start">
+                    <h2 id="viewed-username" class="text-2xl font-bold mb-2"></h2>
+                    <button 
+                        id="follow-button" 
+                        onclick="toggleFollow()" 
+                        class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg transition-colors">
+                        <i class="fas fa-user-plus mr-2"></i><span>Follow</span>
+                    </button>
+                </div>
+                <div id="viewed-profile-details" class="space-y-2 text-purple-200"></div>
+                <div id="viewed-profile-stats" class="mt-4 grid grid-cols-3 gap-4">
+                    <div class="text-center">
+                        <div class="text-xl font-bold" id="total-posts">0</div>
+                        <div class="text-sm text-purple-300">Posts</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-xl font-bold" id="total-likes">0</div>
+                        <div class="text-sm text-purple-300">Likes</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-xl font-bold" id="total-comments">0</div>
+                        <div class="text-sm text-purple-300">Comments</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="user-posts-container" class="space-y-6"></div>
+</div>
+
             <!-- Members Section -->
             <div id="members-section" class="hidden">
                 <h2 class="text-2xl font-bold mb-6">MACRO Members</h2>
@@ -117,17 +157,18 @@
                 </button>
             </div>
             
-            <div class="relative mb-6">
-                <input 
-                    type="text" 
-                    id="search-input" 
-                    placeholder="Search users..." 
-                    class="w-full px-4 py-3 rounded bg-white/20 backdrop-blur-sm border border-purple-300/30 focus:border-purple-500 focus:outline-none text-white placeholder-purple-200 text-lg"
-                >
-                <div id="search-loading" class="absolute right-4 top-1/2 transform -translate-y-1/2 hidden">
-                    <i class="fas fa-spinner fa-spin text-purple-300"></i>
-                </div>
+            <!-- We need to find and modify the search input element styling. Look for: -->
+        <div class="relative mb-6">
+            <input 
+                type="text" 
+                id="search-input" 
+                placeholder="Search users..." 
+                class="w-full px-4 py-3 rounded bg-white/20 backdrop-blur-sm border border-purple-300/30 focus:border-purple-500 focus:outline-none text-purple-900 placeholder-purple-200 text-lg"
+            >
+            <div id="search-loading" class="absolute right-4 top-1/2 transform -translate-y-1/2 hidden">
+                <i class="fas fa-spinner fa-spin text-purple-300"></i>
             </div>
+        </div>
             
             <div id="search-results" class="space-y-3 max-h-96 overflow-y-auto"></div>
         </div>
@@ -180,7 +221,6 @@
         </div>
     </div>
 
-    <!-- Edit Profile Modal -->
     <div id="edit-profile-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
         <div class="bg-purple-900 bg-opacity-90 backdrop-blur-md p-8 rounded-lg w-full max-w-md">
             <div class="flex justify-between items-center mb-6">
@@ -189,8 +229,28 @@
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-
+    
             <form id="edit-profile-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Username</label>
+                    <input 
+                        type="text" 
+                        id="profile-username-input" 
+                        class="w-full px-4 py-2 rounded bg-purple-800 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        required
+                    >
+                </div>
+    
+                <div>
+                    <label class="block text-sm font-medium mb-1">Password</label>
+                    <input 
+                        type="password" 
+                        id="profile-password" 
+                        class="w-full px-4 py-2 rounded bg-purple-800 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        placeholder="Leave blank to keep current password"
+                    >
+                </div>
+    
                 <div>
                     <label class="block text-sm font-medium mb-1">Email</label>
                     <input 
@@ -200,7 +260,21 @@
                         required
                     >
                 </div>
-
+    
+                <div>
+                    <label class="block text-sm font-medium mb-1">Role</label>
+                    <select 
+                        id="profile-role" 
+                        class="w-full px-4 py-2 rounded bg-purple-800 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        onchange="toggleInstrumentField()"
+                        required
+                    >
+                        <option value="listener">Listener</option>
+                        <option value="musician">Musician</option>
+                        <option value="producer">Producer</option>
+                    </select>
+                </div>
+    
                 <div id="instrument-field" class="hidden">
                     <label class="block text-sm font-medium mb-1">Instrument</label>
                     <input 
@@ -209,7 +283,7 @@
                         class="w-full px-4 py-2 rounded bg-purple-800 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                     >
                 </div>
-
+    
                 <div class="flex justify-end space-x-4">
                     <button type="button" onclick="hideEditProfileModal()" class="px-4 py-2 rounded bg-purple-700 hover:bg-purple-600 transition-colors">
                         Cancel
@@ -221,7 +295,7 @@
             </form>
         </div>
     </div>
-
+    
     <script>
         // Profile Management
         async function fetchProfile() {
@@ -252,23 +326,25 @@
     
         // Navigation
         window.addEventListener('hashchange', function() {
-            const fullProfile = document.getElementById('full-profile');
-            const membersSection = document.getElementById('members-section');
-            const feedSection = document.getElementById('feed-section');
-            
-            [fullProfile, membersSection, feedSection].forEach(el => el.classList.add('hidden'));
-            
-            switch(window.location.hash) {
-                case '#profile':
-                    fullProfile.classList.remove('hidden');
-                    break;
-                case '#members':
-                    membersSection.classList.remove('hidden');
-                    break;
-                default:
-                    feedSection.classList.remove('hidden');
-            }
-        });
+    const fullProfile = document.getElementById('full-profile');
+    const membersSection = document.getElementById('members-section');
+    const feedSection = document.getElementById('feed-section');
+    const userProfileSection = document.getElementById('user-profile-section');
+    
+    [fullProfile, membersSection, feedSection, userProfileSection].forEach(el => el.classList.add('hidden'));
+    
+    switch(window.location.hash) {
+        case '#profile':
+            fullProfile.classList.remove('hidden');
+            break;
+        case '#members':
+            membersSection.classList.remove('hidden');
+            break;
+        case '':
+            feedSection.classList.remove('hidden');
+            break;
+    }
+});
     
         // Post Type Selection
         document.getElementById('post-type').addEventListener('change', function() {
@@ -326,36 +402,40 @@
         }, 300);
     
         function displaySearchResults(users) {
-            searchResults.innerHTML = users.length ? users.map(user => `
-                <div class="bg-purple-800 bg-opacity-40 backdrop-blur-md rounded-lg p-4 hover:bg-purple-700 transition-colors">
-                    <div class="flex items-center space-x-4">
-                        <div class="flex-shrink-0">
-                            <div class="w-10 h-10 bg-purple-700 rounded-full flex items-center justify-center">
-                                <i class="fas fa-user text-lg"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow">
-                            <h4 class="text-lg font-bold">${user.username}</h4>
-                            <p class="text-purple-200">${user.role}</p>
-                            ${user.instrument ? `
-                                <p class="text-purple-300">
-                                    <i class="fas fa-music mr-2"></i>${user.instrument}
-                                </p>
-                            ` : ''}
-                        </div>
-                        <div class="flex-shrink-0">
-                            <button class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg transition-colors">
-                                <i class="fas fa-user-plus mr-2"></i>Follow
-                            </button>
-                        </div>
+    searchResults.innerHTML = users.length ? users.map(user => `
+        <div class="bg-purple-800 bg-opacity-40 backdrop-blur-md rounded-lg p-4 hover:bg-purple-700 transition-colors">
+            <div class="flex items-center space-x-4">
+                <div class="flex-shrink-0">
+                    <div class="w-10 h-10 bg-purple-700 rounded-full flex items-center justify-center">
+                        <i class="fas fa-user text-lg"></i>
                     </div>
                 </div>
-            `).join('') : `
-                <div class="text-center text-purple-300 py-4">
-                    No users found
+                <div class="flex-grow">
+                    <h4 class="text-lg font-bold">
+                        <a href="#" onclick="showUserProfile('${user.username}'); return false;" class="hover:text-purple-300">
+                            ${user.username}
+                        </a>
+                    </h4>
+                    <p class="text-purple-200">${user.role}</p>
+                    ${user.instrument ? `
+                        <p class="text-purple-300">
+                            <i class="fas fa-music mr-2"></i>${user.instrument}
+                        </p>
+                    ` : ''}
                 </div>
-            `;
-        }
+                <div class="flex-shrink-0">
+                    <button class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg transition-colors">
+                        <i class="fas fa-user-plus mr-2"></i>Follow
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('') : `
+        <div class="text-center text-purple-300 py-4">
+            No users found
+        </div>
+    `;
+}
     
         function showSearchModal() {
             document.getElementById('search-modal').style.display = 'flex';
@@ -450,7 +530,77 @@
                 `;
             }
         }
-    
+        async function showUserProfile(username) {
+    try {
+        // Hide other sections and show user profile section
+        document.getElementById('full-profile').classList.add('hidden');
+        document.getElementById('members-section').classList.add('hidden');
+        document.getElementById('feed-section').classList.add('hidden');
+        document.getElementById('user-profile-section').classList.remove('hidden');
+        
+        // Hide search modal
+        hideSearchModal();
+        
+        // Update URL
+        window.history.pushState({}, '', `/${username}/`);
+        
+        // Fetch user profile data
+        const response = await fetch(`/${username}`);
+        if (!response.ok) throw new Error('Failed to fetch user profile');
+        const data = await response.json();
+        
+        // Update profile header
+        document.getElementById('viewed-username').textContent = data.user.username;
+        document.getElementById('viewed-profile-details').innerHTML = `
+            <p><i class="fas fa-user-tag mr-2"></i>${data.user.role}</p>
+            ${data.user.instrument ? `<p><i class="fas fa-music mr-2"></i>${data.user.instrument}</p>` : ''}
+        `;
+        
+        // Update stats
+        document.getElementById('total-posts').textContent = data.stats.total_posts;
+        document.getElementById('total-likes').textContent = data.stats.total_likes;
+        document.getElementById('total-comments').textContent = data.stats.total_comments;
+        
+        // Display user's posts
+        document.getElementById('user-posts-container').innerHTML = data.posts.map(post => `
+            <div class="bg-purple-900 bg-opacity-30 backdrop-blur-md rounded-lg p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 bg-purple-700 rounded-full flex items-center justify-center mr-4">
+                            <i class="fas fa-user"></i>
+                        </div>
+                        <div>
+                            <p class="font-bold">${post.username}</p>
+                            <p class="text-sm text-purple-300">${new Date(post.time).toLocaleString()}</p>
+                        </div>
+                    </div>
+                    <div class="flex space-x-4">
+                        <button class="text-purple-300 hover:text-purple-100">
+                            <i class="fas fa-heart"></i> ${post.likes}
+                        </button>
+                        <button class="text-purple-300 hover:text-purple-100">
+                            <i class="fas fa-comment"></i> ${post.comments}
+                        </button>
+                    </div>
+                </div>
+                ${post.content ? `<p class="mb-4">${post.content}</p>` : ''}
+                ${post.type === 'image' ? `
+                    <img src="${post.file_url}" alt="Post image" class="rounded-lg max-h-96 w-full object-cover mb-4">
+                ` : post.type === 'audio' ? `
+                    <audio src="${post.file_url}" controls class="w-full mb-4"></audio>
+                ` : ''}
+            </div>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Error loading user profile:', error);
+        document.getElementById('user-posts-container').innerHTML = `
+            <div class="text-center text-red-300 py-4">
+                Error loading user profile
+            </div>
+        `;
+    }
+}
         // Create Post Handler
         document.getElementById('create-post-form').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -517,6 +667,164 @@
             fetchPosts();
             fetchAudioPosts();
         });
+        async function toggleFollow() {
+    const button = document.getElementById('follow-button');
+    const username = document.getElementById('viewed-username').textContent;
+    const isFollowing = button.querySelector('span').textContent === 'Following';
+
+    try {
+        const response = await fetch(`/user/follow`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                username,
+                action: isFollowing ? 'unfollow' : 'follow'
+            })
+        });
+
+        if (!response.ok) throw new Error('Failed to update follow status');
+
+        // Update button text and style
+        button.querySelector('span').textContent = isFollowing ? 'Follow' : 'Following';
+        button.querySelector('i').className = isFollowing ? 'fas fa-user-plus mr-2' : 'fas fa-user-check mr-2';
+    } catch (error) {
+        console.error('Error updating follow status:', error);
+        alert('Error updating follow status. Please try again.');
+    }
+}
+
+// Update the edit profile form handler
+document.getElementById('edit-profile-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = {
+        username: document.getElementById('profile-username-input').value,
+        role: document.getElementById('profile-role').value,
+        email: document.getElementById('profile-email').value,
+        instrument: document.getElementById('profile-instrument').value,
+    };
+
+    const password = document.getElementById('profile-password').value;
+    if (password) {
+        formData.password = password;
+    }
+
+    try {
+        const response = await fetch('/user/profile', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData)
+        });
+
+        if (!response.ok) throw new Error('Failed to update profile');
+
+        await fetchProfile();
+        hideEditProfileModal();
+    } catch (error) {
+        console.error('Error updating profile:', error);
+        alert('Error updating profile. Please try again.');
+    }
+});
+
+function toggleInstrumentField() {
+    const roleSelect = document.getElementById('profile-role');
+    const instrumentField = document.getElementById('instrument-field');
+    const instrumentInput = document.getElementById('profile-instrument');
+    
+    if (roleSelect.value === 'musician') {
+        instrumentField.classList.remove('hidden');
+        instrumentInput.required = true;
+    } else {
+        instrumentField.classList.add('hidden');
+        instrumentInput.required = false;
+        instrumentInput.value = ''; // Clear instrument when role is not musician
+    }
+}
+
+// Update the showEditProfileModal function
+async function showEditProfileModal() {
+    try {
+        const response = await fetch('/user/profile');
+        if (!response.ok) throw new Error('Failed to fetch profile');
+        const data = await response.json();
+        
+        // Populate form fields with current user data
+        document.getElementById('profile-username-input').value = data.username;
+        document.getElementById('profile-email').value = data.email;
+        document.getElementById('profile-role').value = data.role.toLowerCase();
+        document.getElementById('profile-password').value = ''; // Clear password field
+        
+        // Handle instrument field
+        document.getElementById('profile-instrument').value = data.instrument || '';
+        toggleInstrumentField(); // Show/hide instrument field based on current role
+        
+        document.getElementById('edit-profile-modal').style.display = 'flex';
+    } catch (error) {
+        console.error('Error loading profile data:', error);
+        alert('Error loading profile data. Please try again.');
+    }
+}
+
+// Update the edit profile form handler
+document.getElementById('edit-profile-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = {
+        username: document.getElementById('profile-username-input').value,
+        email: document.getElementById('profile-email').value,
+        role: document.getElementById('profile-role').value
+    };
+
+    // Add password only if it's been changed
+    const password = document.getElementById('profile-password').value;
+    if (password) {
+        formData.password = password;
+    }
+
+    // Add instrument only if role is musician
+    if (formData.role === 'musician') {
+        formData.instrument = document.getElementById('profile-instrument').value;
+    }
+
+    try {
+        const response = await fetch('/user/profile', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData)
+        });
+
+        if (!response.ok) throw new Error('Failed to update profile');
+
+        await fetchProfile();
+        hideEditProfileModal();
+    } catch (error) {
+        console.error('Error updating profile:', error);
+        alert('Error updating profile. Please try again.');
+    }
+});
+
+function hideEditProfileModal() {
+    document.getElementById('edit-profile-modal').style.display = 'none';
+    document.getElementById('edit-profile-form').reset();
+}
+function checkForUsernameRoute() {
+    const path = window.location.pathname;
+    const matches = path.match(/^\/([^\/]+)\/$/);
+    if (matches && matches[1]) {
+        const username = matches[1];
+       console.log('Detected username:', username);
+        showUserProfile(matches[1]);
+    }
+}
+
+window.addEventListener('DOMContentLoaded', checkForUsernameRoute);
+window.addEventListener('popstate', checkForUsernameRoute);
     </script>
 </body>
 </html>

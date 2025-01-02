@@ -67,9 +67,8 @@ def upload_image(file):
         return None
 
 if __name__ == "__main__":
-    file = 'temp/downloads/Screenshot_2024-11-12_at_9.51.41_PM.png'
-    upload_image(file)
+    #file = 'temp/downloads/Screenshot_2024-11-12_at_9.51.41_PM.png'
+    #upload_image(file)
     files = get_files()
     print("All file URLs:")
-    for url in files:
-        print(url)
+    
